@@ -1,0 +1,21 @@
+2015-5-31
+对于builtins，tsh不需要支持background运行，但是我在zsh中试了，它是支持的。
+
+在sigint_handler中，有一句"fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", p->jid, p->pid, sig)"，
+是在按下ctrl-c后，shell process接收到SIGINT信号就应该输出的。但是很奇怪的是make test07中，这一句并没有及时输出：
+
+        tsh> ./myspin 4 &
+        [1] (17070) ./myspin 4 &
+        tsh> ./myspin 5         // 这里后面跟的应该是倒数第二行
+        tsh> jobs
+        Job [2] (17072) terminated by signal 2
+        [1] (17070) Running ./myspin 4 &
+
+然后发现加上DBG()了之后，输出顺序就正确了，我就纳闷了。忽然想到，DBG()中有调用fflush(stdout)的，难道跟这个有关系？
+果不其然，我在sigint_handler的fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", p->jid, p->pid, sig)之后
+加上fflush(stdout)，输出顺序就正确了。
+
+这真他妈是个坑啊，printf, fprintf是所谓的buffer IO函数，我要搞清楚到底是怎么buffer的，buffer什么时候才会被flush.
+
+
+
