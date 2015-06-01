@@ -14,9 +14,6 @@
 #include <signal.h>
 #include <sys/types.h>
 
-
-#define TSH_DEBUG
-
 #include "define.h"
 #include "builtin.h"
 
@@ -202,7 +199,7 @@ static void run_external(int bg, char *cmdline, char **argv)
         }
     }
 
-    DBG(("forked child: %d", pid));
+    /* DBG(("forked child: %d", pid)); */
 
     /* add the child to joblist */
     addjob(jobs, pid, bg ? BG : FG, cmdline);
@@ -337,30 +334,45 @@ int builtin_cmd(char **argv)
 void do_bgfg(char **argv)
 {
     int bg = !strcmp("bg", argv[0]);
+    if (!argv[1]) {
+        fprintf(stdout, "%s: command requires PID or %%jobid argument\n", bg ? "bg" : "fg");
+        return;
+    }
 
     struct job_t *job = NULL;
     char *prefix = strchr(argv[1], '%');
-    if (prefix) {
-        int jid = atoi(prefix + 1);
-        job = getjobjid(jobs, jid);
-    } else {
-        pid_t pid = atoi(argv[1]);
-        job = getjobpid(jobs, pid);
+    int isjid = 0;
+    if (prefix)
+        isjid = 1;
+
+    /* atoi() return 0 if it is an invalid PID or jid */
+    int id = isjid ? atoi(prefix + 1) : atoi(argv[1]);
+    if (!id) {
+        fprintf(stdout, "%s: argument must be a PID or %%jobid\n", bg ? "bg" : "fg");
+        return;
     }
 
-    if (NULL != job) {
-        /* bg command */
-        if (bg && ST == job->state) {
-            job->state = BG;
-            kill(job->pid, SIGCONT);
-        }
-        /* fg command */
-        if (!bg && (ST == job->state || BG == job->state)) {
-            job->state = FG;
-            kill(job->pid, SIGCONT);
-            /* waiting for foreground job */
-            waitfg(job->pid);
-        }
+    job = isjid ? getjobjid(jobs, id) : getjobpid(jobs, id);
+    if (!job) {
+        if (isjid)
+            fprintf(stdout, "%%%d No such job\n", id);
+        else
+            fprintf(stdout, "(%d) No such process\n", id);
+        return;
+    }
+
+    /* bg command */
+    if (bg && ST == job->state) {
+        job->state = BG;
+        fprintf(stdout, "[%d] (%d) %s", job->jid, job->pid, job->cmdline);
+        kill(-(job->pid), SIGCONT);
+    }
+    /* fg command */
+    if (!bg && (ST == job->state || BG == job->state)) {
+        job->state = FG;
+        kill(-(job->pid), SIGCONT);
+        /* waiting for foreground job */
+        waitfg(job->pid);
     }
 }
 
@@ -369,14 +381,18 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    DBG(("waitfg %d", pid));
-    /* use kill -0 to check if the pid exists */
-    while (1)
-    {
-        sleep(1);
-        kill(pid, 0);
-        if (ESRCH == errno)
+    /* DBG(("waitfg %d", pid)); */
+    struct job_t *p = NULL;
+
+    while (1) {
+        p = getjobpid(jobs, pid);
+        /* break if p is terminated or no longer FG */
+        if (!p || FG != p->state) {
             break;
+        }
+        else {
+            sleep(1);
+        }
     }
 }
 
@@ -408,7 +424,7 @@ void sigchld_handler(int sig)
     pid_t stp_pid;
     /* waitpid return 0 if there is no terminated process and stopped process */
     while (0 < (stp_pid = waitpid(-1, &state, WNOHANG | WUNTRACED))) {
-        /* DBG(("got a stopped process: %d", stp_pid)); */
+        DBG(("got a stopped process: %d", stp_pid));
         struct job_t *stpjob = getjobpid(jobs, stp_pid);
         stpjob->state = ST;
     }
@@ -430,7 +446,7 @@ void sigint_handler(int sig)
         if (!kill(-pid, SIGINT)) {
             struct job_t *p = getjobpid(jobs, pid);
             fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", p->jid, p->pid, sig);
-            /* fflush(stdout); */
+            fflush(stdout);
         } else {
             unix_error("kill()");
         }
@@ -449,7 +465,8 @@ void sigtstp_handler(int sig)
     if (pid) {
         if (!kill(-pid, SIGTSTP)) {
             struct job_t *p = getjobpid(jobs, pid);
-            printf("Job [%d] (%d) suspended by signal %d\n", p->jid, p->pid, sig);
+            fprintf(stdout, "Job [%d] (%d) stopped by signal %d\n", p->jid, p->pid, sig);
+            fflush(stdout);
         } else {
             unix_error("kill()");
         }

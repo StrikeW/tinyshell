@@ -15,7 +15,20 @@
 果不其然，我在sigint_handler的fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", p->jid, p->pid, sig)之后
 加上fflush(stdout)，输出顺序就正确了。
 
+        tsh> ./myspin 4 &
+        [1] (18275) ./myspin 4 &
+        tsh> ./myspin 5
+        Job [2] (18277) terminated by signal 2
+        tsh> jobs
+        [1] (18275) Running ./myspin 4 &
+
 这真他妈是个坑啊，printf, fprintf是所谓的buffer IO函数，我要搞清楚到底是怎么buffer的，buffer什么时候才会被flush.
 
 
+2015-6-1
+shell lab差不多搞定了，现在一直在测试，发现了不少bug啊：
+1. waitfg不应该用kill(pid, 0)的，因为停止block的条件是process不再是foreground process，而不是terminated。kill的
+方式只能判断是不是terminated，并且被reaped了。
+
+2. bg, fg命令都没有校验参数的合法性
 
