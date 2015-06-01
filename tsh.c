@@ -420,6 +420,9 @@ void sigchld_handler(int sig)
         clearjob(getjobpid(jobs, reap_pid));
     }
 
+    if (-1 == reap_pid && errno != ECHILD)
+        unix_error("waitpid()");
+
     /* if a job be suspended, we need to change its state here */
     pid_t stp_pid;
     /* waitpid return 0 if there is no terminated process and stopped process */
@@ -429,6 +432,8 @@ void sigchld_handler(int sig)
         stpjob->state = ST;
     }
 
+    if (-1 == stp_pid && errno != ECHILD)
+        unix_error("waitpid()");
 }
 
 /*
