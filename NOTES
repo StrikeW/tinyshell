@@ -32,3 +32,11 @@ shell lab差不多搞定了，现在一直在测试，发现了不少bug啊：
 
 2. bg, fg命令都没有校验参数的合法性
 
+2015-6-4
+In sigchld_handler, how to determine what causes child terminated (by a kill() or normally) or stopped?
+Maybe I should use void (*sa_sigaction)(int, siginfo_t*, void*) to handle SIGCHLD.
+答：通过waitpid()的第二个参数state就可以判断了。WIFSIGNALED，WIFSTOPPED，WIFSIGNALED, WIFSTOPPED就可以判断了。
+
+
+Use close(), dup2(oldfd, newfd), pipe() to implement "|" semantics.
+

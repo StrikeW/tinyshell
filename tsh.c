@@ -355,7 +355,7 @@ void do_bgfg(char **argv)
     job = isjid ? getjobjid(jobs, id) : getjobpid(jobs, id);
     if (!job) {
         if (isjid)
-            fprintf(stdout, "%%%d No such job\n", id);
+            fprintf(stdout, "%%%d: No such job\n", id);
         else
             fprintf(stdout, "(%d) No such process\n", id);
         return;
@@ -411,11 +411,15 @@ void sigchld_handler(int sig)
 {
     /* reaps all zombie and doesn't block */
     pid_t reap_pid;
-    int state = 0;
+    int state = 0;  /* used to determine what causes the SIGCHLD */
     /* waitpid() return 0 immediately when no childs have terminated */
     while (0 < (reap_pid = waitpid(-1, &state, WNOHANG))) {
         /* DBG(("reaped child %d", (int)reap_pid)); */
         /*TODO Is it safe to call getjobpid(), deletejob(), clearjob() in the signal handler?  */
+        if (WIFSIGNALED(state)) {
+            struct job_t *termjob = getjobpid(jobs, reap_pid);
+            fprintf(stdout, "hello Job [%d] (%d) terminated by signal %d\n", termjob->jid, termjob->pid, WTERMSIG(state));
+        }
         deletejob(jobs, reap_pid);
         clearjob(getjobpid(jobs, reap_pid));
     }
@@ -427,9 +431,11 @@ void sigchld_handler(int sig)
     pid_t stp_pid;
     /* waitpid return 0 if there is no terminated process and stopped process */
     while (0 < (stp_pid = waitpid(-1, &state, WNOHANG | WUNTRACED))) {
-        DBG(("got a stopped process: %d", stp_pid));
         struct job_t *stpjob = getjobpid(jobs, stp_pid);
         stpjob->state = ST;
+        if (WIFSTOPPED(state)) {
+            fprintf(stdout, "world Job [%d] (%d) stopped by signal %d\n", stpjob->jid, stpjob->pid, WSTOPSIG(state));
+        }
     }
 
     if (-1 == stp_pid && errno != ECHILD)
@@ -449,11 +455,8 @@ void sigint_handler(int sig)
     /* send SIGINT to each process in foreground process group */
     if (pid) {
         if (!kill(-pid, SIGINT)) {
-            struct job_t *p = getjobpid(jobs, pid);
-            fprintf(stdout, "Job [%d] (%d) terminated by signal %d\n", p->jid, p->pid, sig);
-            fflush(stdout);
         } else {
-            unix_error("kill()");
+            unix_error("kill SIGINT");
         }
     }
 }
@@ -469,11 +472,8 @@ void sigtstp_handler(int sig)
     /* suspend the foreground job by sending a SIGTSTP signal */
     if (pid) {
         if (!kill(-pid, SIGTSTP)) {
-            struct job_t *p = getjobpid(jobs, pid);
-            fprintf(stdout, "Job [%d] (%d) stopped by signal %d\n", p->jid, p->pid, sig);
-            fflush(stdout);
         } else {
-            unix_error("kill()");
+            unix_error("kill SIGTSTP");
         }
     }
 }
